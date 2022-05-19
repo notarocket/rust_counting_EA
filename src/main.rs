@@ -5,11 +5,13 @@ use std::cmp;
 use rand::Rng;
 
 const population: usize = 200;
-const mutate_divide: usize = 2;
-const mutate_change: i32 = 4;
+const mutate_divide: usize = 1;
+const mutate_change: i32 = 20;
 const num_genes: usize = 6; //may need to edit player code if increased
 const goalNum : i32 = 100;
-
+const mutate_min: usize = 0; //Minumum amount of mutations per gene - should not be higher than the number of genes
+const win_influence: f64 = 1.0; //Used to determin how much the win rate of the individual influences the fitness
+const step_influence: f64 = 0.0; //Used to determine how much the steps taken to finish the game influences the fitness of the individual
 
 fn main(){
     
@@ -31,7 +33,7 @@ fn evolutionary_algorithm(){
 
     let mut fitness = evaluate_population(population_gene);
 
-    
+    let mut low_value = 0.0;
     for x in 0..1000{
         let selected_individuals = select_population(population_gene, fitness);
         let mut children = breed_population(selected_individuals[0],selected_individuals[1]);
@@ -45,9 +47,8 @@ fn evolutionary_algorithm(){
             y+=1;
             
         }
-        fitness = [0.0;population];
         fitness = evaluate_population(population_gene);
-        let mut low_value = 1.0;
+        low_value = 1.0;
         for x in fitness{
             if x < low_value{
                 low_value = x;
@@ -56,7 +57,7 @@ fn evolutionary_algorithm(){
         println!("Best fitness: {}", low_value);
     }
 
-    println!("done!");
+    println!("best genome: {:?} with fitness of: {}", population_gene[fitness.iter().position(|&r| r == low_value).unwrap()],low_value);
 
 }
 
@@ -72,7 +73,7 @@ fn create_individual() -> [i32; num_genes]{
     //assing lowering areas
     for x in 2..num_genes{
         if arr[x-1] == goalNum-1 {
-            arr[x] = 99;
+            arr[x] = goalNum-1;
         }
         else{
             arr[x] = rng.gen_range(arr[x-1]..goalNum);
@@ -92,20 +93,30 @@ fn create_individual() -> [i32; num_genes]{
 fn evaluate_population(population_gene: [[i32; num_genes];population]) -> [f64;population]{
 
     let mut fitness_arr = [0.0; population];
+    let mut fitness_step = [0.0;population];
+    let mut rng = rand::thread_rng();
     for x in 0..population{
-
+        let mut results = [0;2];
         for y in 0..population{
-            if !run(population_gene[x], population_gene[y]){
-                fitness_arr[x] += 1.0;
-                fitness_arr[y] -= 1.0;
+            let side = rng.gen_range(1..10);
+            if (side % 2 == 0){
+                results = run2(population_gene[x], population_gene[y]);
             }else{
-                fitness_arr[y] +=1.0;
-                fitness_arr[x] -=1.0;
+                results = run(population_gene[x], population_gene[y]);
+            }
+            
+            if results[0] == 0{
+                fitness_arr[x] += 1.0;
+                fitness_step[x] = results[1] as f64;
+
+            }else{
+                fitness_step[x] = results[1] as f64;
             }
         }
     }
+    let max_step = fitness_step.iter().fold(f64::INFINITY, |a, &b| a.min(b));
     for x in 0..population{
-        fitness_arr[x] = fitness_arr[x];
+        fitness_arr[x] = (fitness_arr[x]/(2.0*population as f64))*win_influence + (fitness_step[x]/max_step)*step_influence;
     }
     return fitness_arr;
 
@@ -143,7 +154,7 @@ fn mutate_offspring(child1: [i32;num_genes], child2: [i32;num_genes]) -> [[i32;n
     let mut child1 = child1.clone();
     let mut child2 = child2.clone();
     let mut rng = rand::thread_rng();
-    let mut mut_num = rng.gen_range(0..num_genes);
+    let mut mut_num = rng.gen_range(mutate_min..num_genes);
     mut_num = mut_num/mutate_divide;
     for x in 0..mut_num{
         let c = rng.gen_range(1..mutate_change);
@@ -197,36 +208,63 @@ fn replace_population(fitness: [f64; population]) -> [f64;2]{
     return remove_values;
 } 
     
-fn run(p2: [i32; num_genes], p1: [i32; num_genes]) -> bool {
+fn run(p2: [i32; num_genes], p1: [i32; num_genes]) -> [i32;2] {
 
     let mut player_state = "player1";
     let mut goal = 0;
-
-    while goal < 100 {
+    let mut steps = 0;
+    while goal < goalNum {
         if player_state == "player1"{
-            goal += player(goal, p1, 99);
+            goal += player(goal, p1, goalNum-1);
             player_state = "player2";
-            if goal == 99{
-                return false;
+            if goal == goalNum-1{
+                return[0,steps];
             }
 
         }else if player_state == "player2" {
-            goal += player(goal, p2, 99);
+            goal += player(goal, p2, goalNum-1);
             player_state = "player1";
-            if goal == 99{
-                return true;
+            if goal == goalNum-1{
+                return [1,steps];
             }
 
         }
+        steps+=1;
 
     }
-    return false; 
+    return [0,steps]; 
+}
+fn run2(p1: [i32; num_genes], p2: [i32; num_genes]) -> [i32;2] {
+
+    let mut player_state = "player1";
+    let mut goal = 0;
+    let mut steps = 0;
+    while goal < goalNum {
+        if player_state == "player1"{
+            goal += player(goal, p1, goalNum-1);
+            player_state = "player2";
+            if goal == goalNum-1{
+                return[1,steps];
+            }
+
+        }else if player_state == "player2" {
+            goal += player(goal, p2, goalNum-1);
+            player_state = "player1";
+            if goal == goalNum-1{
+                return [0,steps];
+            }
+
+        }
+        steps+=1;
+
+    }
+    return [0,steps]; 
 }
 fn player(goal_pos: i32, gene_data: [i32;num_genes], goal: i32) -> i32{
     let mut rval = gene_data[0]; //gene data 0 = default return value
     for x in 2..num_genes{ //gene data >=2 used for areas where player lowers their total entry
         if rval < gene_data[x]{
-            if rval > (goal - goal_pos){
+            if rval/2 > (goal - goal_pos){
                 return 1;
             }
             return rval;
@@ -239,7 +277,7 @@ fn player(goal_pos: i32, gene_data: [i32;num_genes], goal: i32) -> i32{
         }
 
     } 
-    return 1;      
+    return rval;      
  
 }
     
